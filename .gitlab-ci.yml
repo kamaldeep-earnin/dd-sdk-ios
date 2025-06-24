@@ -78,11 +78,6 @@ default:
       when: delayed
       start_in: 40 minutes
 
-.carthage-cache: &carthage-cache
-  key: "carthage-cache-$CI_COMMIT_REF_SLUG"
-  paths:
-    - Carthage/Build
-
 ENV check:
   stage: pre
   rules: 
@@ -96,25 +91,23 @@ ENV check:
 # │ Local Cache: │
 # └──────────────┘
 
-Dependency Cache:
+Build Dependencies:
   stage: pre
   rules:
     - !reference [.test-pipeline-job, rules]
     - !reference [.release-pipeline-job, rules]
-  cache:
-    - <<: *carthage-cache
-      policy: push
+  artifacts:
+    paths:
+      - Carthage/Build
+    expire_in: 4 hours
+    when: on_success
   script:
     - ./tools/runner-setup.sh --xcode "$DEFAULT_XCODE"
+    - echo "Building dependencies..."
     - make clean dependencies
-
-Clear Cache:
-  stage: post
-  cache:
-    - <<: *carthage-cache
-      policy: pull-push
-  script:
-    - make clean-carthage
+    - echo "Dependencies built, checking content:"
+    - ls -la Carthage/Build || echo "No Carthage/Build directory"
+    - find Carthage/Build -name "*.framework" | head -5 || echo "No frameworks found"
 
 # ┌──────────────────────────┐
 # │ SDK changes integration: │
@@ -135,9 +128,8 @@ Unit Tests (iOS):
   rules: 
     - !reference [.test-pipeline-job, rules]
     - !reference [.release-pipeline-job, rules]
-  cache:
-    - <<: *carthage-cache
-      policy: pull
+  dependencies:
+    - "Build Dependencies"
   variables:
     PLATFORM: "iOS Simulator"
     DEVICE: "iPhone 16 Pro"
@@ -151,9 +143,8 @@ Unit Tests (tvOS):
   rules: 
     - !reference [.test-pipeline-job, rules]
     - !reference [.release-pipeline-job, rules]
-  cache:
-    - <<: *carthage-cache
-      policy: pull
+  dependencies:
+    - "Build Dependencies"
   variables:
     PLATFORM: "tvOS Simulator"
     DEVICE: "Apple TV"
@@ -167,9 +158,8 @@ UI Tests:
   rules: 
     - !reference [.test-pipeline-job, rules]
     - !reference [.release-pipeline-job, rules]
-  cache:
-    - <<: *carthage-cache
-      policy: pull
+  dependencies:
+    - "Build Dependencies"
   variables:
     PLATFORM: "iOS Simulator"
     DEVICE: "iPhone 16 Pro"
