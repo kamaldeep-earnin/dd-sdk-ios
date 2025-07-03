@@ -65,32 +65,32 @@ internal class DataUploadWorker: DataUploadWorkerType {
         self.delay = delay
         self.featureName = featureName
         self.telemetry = telemetry
-        let readWorkItem = DispatchWorkItem { [weak self] in
-            guard let self = self else {
-                return
-            }
-
-            let context = contextProvider.read()
-            let blockersForUpload = uploadConditions.blockersForUpload(with: context)
-            let isSystemReady = blockersForUpload.isEmpty
-            let files = isSystemReady ? fileReader.readFiles(limit: maxBatchesPerUpload) : nil
-            if let files = files, !files.isEmpty {
-                DD.logger.debug("⏳ (\(self.featureName)) Uploading batches...")
-                self.backgroundTaskCoordinator?.beginBackgroundTask()
-                self.uploadFile(from: files.reversed(), context: context)
-            } else {
-                let batchLabel = files?.isEmpty == false ? "YES" : (isSystemReady ? "NO" : "NOT CHECKED")
-                DD.logger.debug("💡 (\(self.featureName)) No upload. Batch to upload: \(batchLabel), System conditions: \(blockersForUpload.description)")
-                self.delay.increase()
-                self.backgroundTaskCoordinator?.endBackgroundTask()
-                self.scheduleNextCycle()
-                sendUploadQualityMetric(blockers: blockersForUpload)
-            }
-        }
-        self.readWork = readWorkItem
+//        let readWorkItem = DispatchWorkItem { [weak self] in
+//            guard let self = self else {
+//                return
+//            }
+//
+//            let context = contextProvider.read()
+//            let blockersForUpload = uploadConditions.blockersForUpload(with: context)
+//            let isSystemReady = blockersForUpload.isEmpty
+//            let files = isSystemReady ? fileReader.readFiles(limit: maxBatchesPerUpload) : nil
+//            if let files = files, !files.isEmpty {
+//                DD.logger.debug("⏳ (\(self.featureName)) Uploading batches...")
+//                self.backgroundTaskCoordinator?.beginBackgroundTask()
+//                self.uploadFile(from: files.reversed(), context: context)
+//            } else {
+//                let batchLabel = files?.isEmpty == false ? "YES" : (isSystemReady ? "NO" : "NOT CHECKED")
+//                DD.logger.debug("💡 (\(self.featureName)) No upload. Batch to upload: \(batchLabel), System conditions: \(blockersForUpload.description)")
+//                self.delay.increase()
+//                self.backgroundTaskCoordinator?.endBackgroundTask()
+//                self.scheduleNextCycle()
+//                sendUploadQualityMetric(blockers: blockersForUpload)
+//            }
+//        }
+//        self.readWork = readWorkItem
 
         // Start sending batches immediately after initialization:
-        queue.async(execute: readWorkItem)
+//        queue.async(execute: readWorkItem)
     }
 
     private func scheduleNextCycle() {
@@ -184,37 +184,45 @@ internal class DataUploadWorker: DataUploadWorkerType {
     /// Sends all unsent data synchronously.
     /// - It performs arbitrary upload (without checking upload condition and without re-transmitting failed uploads).
     internal func flushSynchronously() {
-        queue.sync { [weak self] in
-            guard let self = self else {
-                return
-            }
+        var allEvents: [Event] = []
+//        queue.sync { [weak self] in
+//            guard let self = self else {
+//                return
+//            }
             for file in self.fileReader.readFiles(limit: .max) {
                 guard let nextBatch = self.fileReader.readBatch(from: file) else {
                     continue
                 }
-                defer {
+                
+                allEvents.append(contentsOf: nextBatch.events)
+//                defer {
                     // RUMM-3459 Delete the underlying batch with `.flushed` reason that will be ignored in reported
                     // metrics or telemetry. This is legitimate as long as `flush()` routine is only available for testing
                     // purposes and never run in production apps.
-                    self.fileReader.markBatchAsRead(nextBatch, reason: .flushed)
-                    previousUploadStatus = nil
-                }
-                do {
-                    // Try uploading the batch and do one more retry on failure.
-                    previousUploadStatus = try self.dataUploader.upload(
-                        events: nextBatch.events,
-                        context: self.contextProvider.read(),
-                        previous: previousUploadStatus
-                    )
-                } catch {
-                    previousUploadStatus = try? self.dataUploader.upload(
-                        events: nextBatch.events,
-                        context: self.contextProvider.read(),
-                        previous: previousUploadStatus
-                    )
-                }
-            }
+                self.fileReader.markBatchAsRead(nextBatch, reason: .flushed)
+//                    previousUploadStatus = nil
+//                }
+//                do {
+//                    // Try uploading the batch and do one more retry on failure.
+//                    previousUploadStatus = try self.dataUploader.upload(
+//                        events: nextBatch.events,
+//                        context: self.contextProvider.read(),
+//                        previous: previousUploadStatus
+//                    )
+//                } catch {
+//                    previousUploadStatus = try? self.dataUploader.upload(
+//                        events: nextBatch.events,
+//                        context: self.contextProvider.read(),
+//                        previous: previousUploadStatus
+//                    )
+//                }
+//            }
         }
+        
+        if EventFileLogger.isEnabled {
+            EventFileLogger.log(events: allEvents)
+        }
+        
     }
 
     /// Cancels scheduled uploads and stops scheduling next ones.

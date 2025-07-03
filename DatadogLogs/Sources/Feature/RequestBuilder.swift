@@ -9,7 +9,7 @@ import DatadogInternal
 
 /// The Logging URL Request Builder for formatting and configuring the `URLRequest`
 /// to upload logs data.
-internal struct RequestBuilder: FeatureRequestBuilder {
+public struct RequestBuilder: FeatureRequestBuilder {
     /// A custom logs intake.
     let customIntakeURL: URL?
 
@@ -27,7 +27,7 @@ internal struct RequestBuilder: FeatureRequestBuilder {
         self.telemetry = telemetry
     }
 
-    func request(
+    public func request(
         for events: [Event],
         with context: DatadogContext,
         execution: ExecutionContext

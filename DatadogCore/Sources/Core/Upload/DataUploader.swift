@@ -9,12 +9,12 @@ import DatadogInternal
 import CommonCrypto
 
 /// A type that performs data uploads.
-internal protocol DataUploaderType {
+public protocol DataUploaderType {
     func upload(events: [Event], context: DatadogContext, previous: DataUploadStatus?) throws -> DataUploadStatus
 }
 
 /// Synchronously uploads data to server using `HTTPClient`.
-internal final class DataUploader: DataUploaderType {
+public final class DataUploader: DataUploaderType {
     /// An unreachable upload status - only meant to satisfy the compiler.
     private static let unreachableUploadStatus = DataUploadStatus(
         needsRetry: false,
@@ -41,7 +41,7 @@ internal final class DataUploader: DataUploaderType {
 
     /// Uploads data synchronously (will block current thread) and returns the upload status.
     /// Uses timeout configured for `HTTPClient`.
-    func upload(events: [Event], context: DatadogContext, previous: DataUploadStatus?) throws -> DataUploadStatus {
+    public func upload(events: [Event], context: DatadogContext, previous: DataUploadStatus?) throws -> DataUploadStatus {
         let attempt: UInt
         if let previous = previous {
             attempt = previous.attempt + 1
@@ -53,7 +53,7 @@ internal final class DataUploader: DataUploaderType {
         let request = try requestBuilder.request(for: events, with: context, execution: execution)
 
         let requestID = request.value(forHTTPHeaderField: URLRequestBuilder.HTTPHeader.ddRequestIDHeaderField)
-
+        
         var uploadStatus: DataUploadStatus?
 
         let semaphore = DispatchSemaphore(value: 0)

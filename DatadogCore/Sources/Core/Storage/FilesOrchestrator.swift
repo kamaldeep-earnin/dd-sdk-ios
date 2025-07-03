@@ -229,7 +229,7 @@ internal class FilesOrchestrator: FilesOrchestratorType {
             try readableFile.delete()
             // Decrement pending batches at each batch deletion
             _pendingBatches.mutate { $0 -= 1 }
-            sendBatchDeletedMetric(batchFile: readableFile, deletionReason: deletionReason)
+//            sendBatchDeletedMetric(batchFile: readableFile, deletionReason: deletionReason)
         } catch {
             telemetry.error("Failed to delete file", error: error)
         }
