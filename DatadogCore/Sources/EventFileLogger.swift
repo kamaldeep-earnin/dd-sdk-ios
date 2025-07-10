@@ -63,7 +63,7 @@ public class EventFileLogger {
     /// - Returns: The detected mode
     private static func autoDetectMode(for testName: String, logDirectory: String) -> EventFileLoggerMode {
         let fileManager = FileManager.default
-        let baselineFilename = "rum-\(testName)-baseline.jsonl"
+        let baselineFilename = "\(testName)-baseline.jsonl"
         let baselinePath = URL(fileURLWithPath: logDirectory).appendingPathComponent(baselineFilename).path
         
         // Check if baseline file already exists
