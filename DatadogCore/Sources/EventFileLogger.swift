@@ -21,9 +21,16 @@ public class EventFileLogger {
     public static var logDirectory: String = NSTemporaryDirectory()
 
     private static var fileHandle: FileHandle?
+    
+    // Track sequence numbers with stable hierarchical context
+    private static var eventSequenceCounters: [String: Int] = [:]
+    private static var currentViewName: String?
 
     private static var fileURL: URL? {
-        let filename = "\(testName)-\(mode.rawValue).jsonl"
+        var filename = "\(testName)-\(mode.rawValue).jsonl"
+//        if mode == .replayed {
+//            filename = "\(testName)-\(UUID().uuidString)-\(mode.rawValue).jsonl"
+//        }
         return URL(fileURLWithPath: logDirectory).appendingPathComponent(filename)
     }
 
@@ -40,6 +47,10 @@ public class EventFileLogger {
         print("📊 EventFileLogger: Auto-detected mode for \(testName) - \(detectedMode.rawValue)")
         
         isEnabled = true
+        
+        // Reset sequence counters and context for new test run
+        eventSequenceCounters.removeAll()
+        currentViewName = nil
 
         // Create file if needed
         if let url = fileURL {
@@ -92,6 +103,69 @@ public class EventFileLogger {
         }
         return 0
     }
+    
+    /// Generates a sequence number for an event based on stable RUM hierarchy
+    /// - Parameters:
+    ///   - eventName: The name of the event
+    ///   - eventType: The type of the event (view, action, etc.)
+    ///   - viewName: The name of the view (optional, for actions)
+    /// - Returns: A sequence number for this event
+    private static func getSequenceNumber(for eventName: String, eventType: String, viewName: String?) -> Int {
+        // Update current view context
+        if let viewName = viewName {
+            currentViewName = viewName
+        }
+        
+        // Create stable hierarchical key based on event type
+        let key: String
+        switch eventType {
+        case "view":
+            // Views are globally scoped (only one sequence per view name)
+            key = "view_\(eventName)"
+        case "action":
+            // Actions are scoped to view name (stable across runs)
+            let viewContext = currentViewName ?? "unknown_view"
+            key = "action_\(eventName)_\(viewContext)"
+        default:
+            // Other events (custom, error, etc.) are globally scoped
+            key = "\(eventType)_\(eventName)"
+        }
+        
+        let currentSequence = eventSequenceCounters[key] ?? 0
+        eventSequenceCounters[key] = currentSequence + 1
+        return currentSequence
+    }
+    
+    /// Extracts event name, type, and view context from JSON data
+    /// - Parameter json: The JSON object representing the event
+    /// - Returns: Tuple of (eventName, eventType, viewName) or nil if not found
+    private static func extractEventInfo(from json: [String: Any]) -> (name: String, type: String, viewName: String?)? {
+        // Events are directly structured, no ddrum_payload wrapper
+        
+        // Extract view name for context
+        let viewName = (json["view"] as? [String: Any])?["name"] as? String
+        
+        // Extract view name
+        if let view = json["view"] as? [String: Any],
+           let viewName = view["name"] as? String {
+            return (viewName, "view", viewName)
+        }
+        
+        // Extract action name
+        if let action = json["action"] as? [String: Any],
+           let actionTarget = action["target"] as? [String: Any],
+           let actionName = actionTarget["name"] as? String {
+            return (actionName, "action", viewName)
+        }
+        
+        // Extract custom event name
+        if let customEventName = json["name"] as? String {
+            let eventType = json["type"] as? String ?? "custom"
+            return (customEventName, eventType, viewName)
+        }
+        
+        return nil
+    }
 
     /// Call this with the array of events to log, sorted by timestamp.
     public static func log(events: [Event]) {
@@ -100,11 +174,31 @@ public class EventFileLogger {
         let sortedEvents = events.sorted { extractTimestamp(from: $0) < extractTimestamp(from: $1) }
         for event in sortedEvents {
             // Try to decode event.data as JSON
-            if let jsonObject = try? JSONSerialization.jsonObject(with: event.data, options: []),
-               let jsonData = try? JSONSerialization.data(withJSONObject: jsonObject, options: []),
-               let jsonString = String(data: jsonData, encoding: .utf8),
-               let lineData = (jsonString + "\n").data(using: .utf8) {
-                handle.write(lineData)
+            if let jsonObject = try? JSONSerialization.jsonObject(with: event.data, options: []) as? [String: Any] {
+                
+                // Extract event info and add sequence number
+                if let eventInfo = extractEventInfo(from: jsonObject) {
+                    let sequenceNumber = getSequenceNumber(for: eventInfo.name, eventType: eventInfo.type, viewName: eventInfo.viewName)
+                    
+                    // Add sequence number to the JSON
+                    var updatedJson = jsonObject
+                    updatedJson["sequence_number"] = sequenceNumber
+                    updatedJson["event_name"] = eventInfo.name
+                    updatedJson["event_type"] = eventInfo.type
+                    
+                    if let jsonData = try? JSONSerialization.data(withJSONObject: updatedJson, options: []),
+                       let jsonString = String(data: jsonData, encoding: .utf8),
+                       let lineData = (jsonString + "\n").data(using: .utf8) {
+                        handle.write(lineData)
+                    }
+                } else {
+                    // Fallback: write original JSON without sequence number
+                    if let jsonData = try? JSONSerialization.data(withJSONObject: jsonObject, options: []),
+                       let jsonString = String(data: jsonData, encoding: .utf8),
+                       let lineData = (jsonString + "\n").data(using: .utf8) {
+                        handle.write(lineData)
+                    }
+                }
             } else {
                 // Fallback: write base64 if not JSON
                 let fallback: [String: Any] = [
