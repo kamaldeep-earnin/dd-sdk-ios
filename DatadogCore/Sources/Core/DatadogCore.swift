@@ -285,6 +285,21 @@ internal final class DatadogCore {
 
         stop()
     }
+    
+#if EARNIN_PERF_TESTING
+    func forceFlush() {
+        flush()
+
+        // At this point we can assume that all write operations completed and resulted with writing events to
+        // storage. We now temporarily authorize storage for making all files readable ("uploadable") and perform
+        // arbitrary uploads (without retrying on failure).
+        allStorages.forEach { $0.setIgnoreFilesAgeWhenReading(to: true) }
+        allUploads.forEach { $0.flushAndTearDown() }
+        allStorages.forEach { $0.setIgnoreFilesAgeWhenReading(to: false) }
+        
+        stop()
+    }
+#endif
 
     /// Stops all processes for this instance of the Datadog core by
     /// deallocating all Features and their storage & upload units.

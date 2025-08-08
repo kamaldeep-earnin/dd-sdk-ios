@@ -537,6 +537,13 @@ public enum Datadog {
         // Flush and tear down SDK core:
         core?.flushAndTearDown()
     }
+
+#if EARNIN_PERF_TESTING
+    public static func forceFlush() {
+        let core = CoreRegistry.instance(named: CoreRegistry.defaultInstanceName) as? DatadogCore
+        core?.forceFlush()
+    }
+#endif
 }
 
 private func isValid(env: String) throws {

@@ -44,6 +44,30 @@ internal class DataUploadWorker: DataUploadWorkerType {
 
     private var previousUploadStatus: DataUploadStatus?
 
+#if EARNIN_PERF_TESTING
+    init(
+        queue: DispatchQueue,
+        fileReader: Reader,
+        dataUploader: DataUploaderType,
+        contextProvider: DatadogContextProvider,
+        uploadConditions: DataUploadConditions,
+        delay: DataUploadDelay,
+        featureName: String,
+        telemetry: Telemetry,
+        maxBatchesPerUpload: Int,
+        backgroundTaskCoordinator: BackgroundTaskCoordinator? = nil
+    ) {
+        self.queue = queue
+        self.fileReader = fileReader
+        self.uploadConditions = uploadConditions
+        self.dataUploader = dataUploader
+        self.contextProvider = contextProvider
+        self.backgroundTaskCoordinator = backgroundTaskCoordinator
+        self.delay = delay
+        self.featureName = featureName
+        self.telemetry = telemetry
+    }
+#else
     init(
         queue: DispatchQueue,
         fileReader: Reader,
@@ -92,6 +116,7 @@ internal class DataUploadWorker: DataUploadWorkerType {
         // Start sending batches immediately after initialization:
         queue.async(execute: readWorkItem)
     }
+#endif
 
     private func scheduleNextCycle() {
         guard let readWork = self.readWork else {
@@ -180,7 +205,25 @@ internal class DataUploadWorker: DataUploadWorkerType {
         self.uploadWork = uploadWork
         queue.async(execute: uploadWork)
     }
-
+    
+#if EARNIN_PERF_TESTING
+    internal func flushSynchronously() {
+        var allEvents: [Event] = []
+            for file in self.fileReader.readFiles(limit: .max) {
+                guard let nextBatch = self.fileReader.readBatch(from: file) else {
+                    continue
+                }
+                
+                allEvents.append(contentsOf: nextBatch.events)
+                self.fileReader.markBatchAsRead(nextBatch, reason: .flushed)
+        }
+        
+        if EventFileLogger.isEnabled {
+            EventFileLogger.log(events: allEvents)
+        }
+        
+    }
+#else
     /// Sends all unsent data synchronously.
     /// - It performs arbitrary upload (without checking upload condition and without re-transmitting failed uploads).
     internal func flushSynchronously() {
@@ -192,11 +235,12 @@ internal class DataUploadWorker: DataUploadWorkerType {
                 guard let nextBatch = self.fileReader.readBatch(from: file) else {
                     continue
                 }
+                
                 defer {
                     // RUMM-3459 Delete the underlying batch with `.flushed` reason that will be ignored in reported
                     // metrics or telemetry. This is legitimate as long as `flush()` routine is only available for testing
                     // purposes and never run in production apps.
-                    self.fileReader.markBatchAsRead(nextBatch, reason: .flushed)
+                self.fileReader.markBatchAsRead(nextBatch, reason: .flushed)
                     previousUploadStatus = nil
                 }
                 do {
@@ -216,6 +260,7 @@ internal class DataUploadWorker: DataUploadWorkerType {
             }
         }
     }
+#endif
 
     /// Cancels scheduled uploads and stops scheduling next ones.
     /// - It does not affect the upload that has already begun.
