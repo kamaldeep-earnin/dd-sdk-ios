@@ -43,7 +43,6 @@ public class EventFileLogger {
         }
         
         // Auto-detect mode if baseline file already exists
-        let detectedMode =
         self.mode = detectMode ? autoDetectMode(for: testName, logDirectory: self.logDirectory) : mode
         
         print("📊 EventFileLogger: Detected mode for \(testName) - \(mode)")

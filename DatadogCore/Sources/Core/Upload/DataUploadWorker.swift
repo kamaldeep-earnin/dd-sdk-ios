@@ -56,6 +56,7 @@ internal class DataUploadWorker: DataUploadWorkerType {
         telemetry: Telemetry,
         maxBatchesPerUpload: Int,
         backgroundTaskCoordinator: BackgroundTaskCoordinator? = nil
+    ) {
         self.queue = queue
         self.fileReader = fileReader
         self.uploadConditions = uploadConditions
@@ -204,7 +205,25 @@ internal class DataUploadWorker: DataUploadWorkerType {
         self.uploadWork = uploadWork
         queue.async(execute: uploadWork)
     }
-
+    
+#if EARNIN_PERF_TESTING
+    internal func flushSynchronously() {
+        var allEvents: [Event] = []
+            for file in self.fileReader.readFiles(limit: .max) {
+                guard let nextBatch = self.fileReader.readBatch(from: file) else {
+                    continue
+                }
+                
+                allEvents.append(contentsOf: nextBatch.events)
+                self.fileReader.markBatchAsRead(nextBatch, reason: .flushed)
+        }
+        
+        if EventFileLogger.isEnabled {
+            EventFileLogger.log(events: allEvents)
+        }
+        
+    }
+#else
     /// Sends all unsent data synchronously.
     /// - It performs arbitrary upload (without checking upload condition and without re-transmitting failed uploads).
     internal func flushSynchronously() {
@@ -240,24 +259,6 @@ internal class DataUploadWorker: DataUploadWorkerType {
                 }
             }
         }
-    }
-
-#if EARNIN_PERF_TESTING
-    internal func flushSynchronously() {
-        var allEvents: [Event] = []
-            for file in self.fileReader.readFiles(limit: .max) {
-                guard let nextBatch = self.fileReader.readBatch(from: file) else {
-                    continue
-                }
-                
-                allEvents.append(contentsOf: nextBatch.events)
-                self.fileReader.markBatchAsRead(nextBatch, reason: .flushed)
-        }
-        
-        if EventFileLogger.isEnabled {
-            EventFileLogger.log(events: allEvents)
-        }
-        
     }
 #endif
 
